@@ -1,0 +1,38 @@
+name: Upload NFT Media to 4EVERLAND
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id: {description: 'Workflow run ID containing the prepared media artifact', required: true, type: string}
+      artifact_name: {description: 'Artifact containing exactly 1,652 final images', required: true, type: string}
+      confirmation: {description: 'Type UPLOAD-THRINWULF-1652', required: true, type: string}
+permissions: {actions: read, contents: read}
+concurrency: {group: 'thrinwulf-4everland-upload', cancel-in-progress: false}
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    environment: web3-storage
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.FOUREVER_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.FOUREVER_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: 4everland
+      FOUREVER_BUCKET: ${{ vars.FOUREVER_BUCKET }}
+      FOUREVER_IMAGE_PREFIX: ${{ vars.FOUREVER_IMAGE_PREFIX }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Human gate
+        run: test '${{ inputs.confirmation }}' = 'UPLOAD-THRINWULF-1652'
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: {name: '${{ inputs.artifact_name }}', run-id: '${{ inputs.source_run_id }}', github-token: '${{ github.token }}', path: nft-upload}
+      - name: Validate local media set
+        run: |
+          : "${FOUREVER_BUCKET:?missing bucket}"; : "${FOUREVER_IMAGE_PREFIX:?missing prefix}"
+          case "$FOUREVER_IMAGE_PREFIX" in ''|/|.|..) echo 'Unsafe prefix'; exit 1;; esac
+          count="$(find nft-upload -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \) | wc -l | tr -d ' ')"
+          test "$count" -eq 1652
+      - name: Multipart upload through verified S3-compatible endpoint
+        run: aws --endpoint-url https://endpoint.4everland.co s3 sync nft-upload/ "s3://${FOUREVER_BUCKET}/${FOUREVER_IMAGE_PREFIX}/" --only-show-errors --no-follow-symlinks
+      - name: Verify published IPFS CIDs
+        run: bash tools/verify_4everland_bucket.sh 4everland-ipfs-report.tsv | tee 4everland-summary.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: 'thrinwulf-4everland-upload-${{ github.sha }}', path: '4everland-*', if-no-files-found: error, retention-days: 90}
