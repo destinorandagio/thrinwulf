@@ -1,0 +1,20 @@
+{
+  "name": "thrinwulf-contracts",
+  "private": true,
+  "scripts": {
+    "compile": "hardhat compile",
+    "test": "hardhat test",
+    "test:release": "hardhat test --grep RELEASE",
+    "deploy:amoy": "hardhat run scripts/deploy.js --network amoy",
+    "deploy:polygon": "hardhat run scripts/deploy.js --network polygon",
+    "metadata:build": "node scripts/generate-final-metadata.js",
+    "metadata:validate": "node scripts/validate-1652-release.js"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "4.9.6",
+    "@limitbreak/creator-token-standards": "5.0.0",
+    "hardhat": "^2.22.0",
+    "solc": "0.8.28"
+  }
+}
