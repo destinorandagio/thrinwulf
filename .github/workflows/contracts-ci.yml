@@ -1,0 +1,20 @@
+name: Contract CI
+on:
+  push:
+    paths: ['contracts/**','.github/workflows/contracts-ci.yml']
+  pull_request:
+    paths: ['contracts/**','.github/workflows/contracts-ci.yml']
+permissions: {contents: read}
+concurrency: {group: 'contracts-${{ github.ref }}', cancel-in-progress: true}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults: {run: {working-directory: contracts}}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22', cache: npm, cache-dependency-path: contracts/package-lock.json}
+      - run: npm ci --no-audit --no-fund
+      - run: npm run compile
+      - run: npm test
