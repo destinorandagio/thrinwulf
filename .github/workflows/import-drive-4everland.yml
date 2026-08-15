@@ -1,0 +1,83 @@
+name: Import Drive NFT Media to 4EVERLAND
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: Type IMPORT-THRINWULF-1654
+        required: true
+        type: string
+permissions: {contents: read}
+concurrency: {group: thrinwulf-drive-4everland, cancel-in-progress: false}
+jobs:
+  import:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    environment: web3-storage
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.FOUREVER_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.FOUREVER_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: 4everland
+      FOUREVER_BUCKET: ${{ vars.FOUREVER_BUCKET }}
+      FOUREVER_IMAGE_PREFIX: ${{ vars.FOUREVER_IMAGE_PREFIX }}
+      FOUREVER_LIFECYCLE_PREFIX: ${{ vars.FOUREVER_LIFECYCLE_PREFIX }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Human and configuration gate
+        run: |
+          test '${{ inputs.confirmation }}' = 'IMPORT-THRINWULF-1654'
+          : "${FOUREVER_BUCKET:?missing FOUREVER_BUCKET}"
+          : "${FOUREVER_IMAGE_PREFIX:?missing FOUREVER_IMAGE_PREFIX}"
+          : "${FOUREVER_LIFECYCLE_PREFIX:?missing FOUREVER_LIFECYCLE_PREFIX}"
+      - name: Build deterministic Drive download plan
+        run: |
+          python3 - <<'PY'
+          import csv, pathlib
+          source=pathlib.Path("nft-assets/drive-collection.csv")
+          out=pathlib.Path("drive-plan.tsv")
+          rows=list(csv.DictReader(source.open(encoding="utf-8")))
+          assert len(rows)==1652
+          with out.open("w",encoding="utf-8") as f:
+            for row in rows:
+              ext={"image/jpeg":"jpg","image/png":"png","image/webp":"webp"}[row["mime_type"]]
+              f.write(f'{row["asset_id"]}\t{row["drive_file_id"]}\t{row["size_bytes"]}\t{row["rarity"]}\t{ext}\n')
+          PY
+      - name: Download and validate reveal media
+        run: |
+          mkdir -p nft-upload
+          download_one() {
+            IFS=$'\t' read -r asset drive_id expected rarity ext <<< "$1"
+            target="nft-upload/${asset}.${ext}"
+            curl --fail --location --retry 5 --retry-all-errors --silent --show-error +              "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "${target}"
+            actual="$(stat -c%s "${target}")"
+            test "${actual}" = "${expected}"
+          }
+          export -f download_one
+          xargs -d '\n' -P 8 -I{} bash -c 'download_one "$1"' _ {} < drive-plan.tsv
+          test "$(find nft-upload -type f | wc -l | tr -d ' ')" -eq 1652
+      - name: Download shared Mystery and Pre-Reveal assets
+        run: |
+          mkdir -p lifecycle-upload
+          python3 - <<'PY' > lifecycle-plan.tsv
+          import json
+          d=json.load(open("nft-assets/drive-inventory.json",encoding="utf-8"))
+          for x in d["sharedAssets"]:
+            name="pre-reveal.png" if x["role"]=="Pre-Reveal" else "mystery.png"
+            print(x["driveFileId"],x["sizeBytes"],name,sep="\t")
+          PY
+          while IFS=$'\t' read -r drive_id expected name; do
+            curl --fail --location --retry 5 --retry-all-errors --silent --show-error +              "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "lifecycle-upload/${name}"
+            test "$(stat -c%s "lifecycle-upload/${name}")" = "${expected}"
+          done < lifecycle-plan.tsv
+          test "$(find lifecycle-upload -type f | wc -l | tr -d ' ')" -eq 2
+      - name: Upload reveal media through 4EVERLAND S3 endpoint
+        run: aws --endpoint-url https://endpoint.4everland.co s3 sync nft-upload/ "s3://${FOUREVER_BUCKET}/${FOUREVER_IMAGE_PREFIX}/" --only-show-errors --no-follow-symlinks
+      - name: Upload shared lifecycle media
+        run: aws --endpoint-url https://endpoint.4everland.co s3 sync lifecycle-upload/ "s3://${FOUREVER_BUCKET}/${FOUREVER_LIFECYCLE_PREFIX}/" --only-show-errors --no-follow-symlinks
+      - name: Verify all reveal CIDs
+        run: bash tools/verify_4everland_bucket.sh 4everland-ipfs-report.tsv | tee 4everland-summary.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: thrinwulf-drive-4everland-${{ github.sha }}
+          path: 4everland-*
+          if-no-files-found: error
+          retention-days: 90
