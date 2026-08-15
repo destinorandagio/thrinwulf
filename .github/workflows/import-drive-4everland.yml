@@ -1,33 +1,33 @@
-name: Import Drive NFT Media to 4EVERLAND
+name: THRINWULF One-Click Amoy Release
 on:
   workflow_dispatch:
-    inputs:
-      confirmation:
-        description: Type IMPORT-THRINWULF-1654
-        required: true
-        type: string
 permissions: {contents: read}
 concurrency: {group: thrinwulf-drive-4everland, cancel-in-progress: false}
 jobs:
   import:
     runs-on: ubuntu-latest
     timeout-minutes: 300
-    environment: web3-storage
     env:
       AWS_ACCESS_KEY_ID: ${{ secrets.FOUREVER_ACCESS_KEY_ID }}
       AWS_SECRET_ACCESS_KEY: ${{ secrets.FOUREVER_SECRET_ACCESS_KEY }}
       AWS_DEFAULT_REGION: 4everland
-      FOUREVER_BUCKET: ${{ vars.FOUREVER_BUCKET }}
-      FOUREVER_IMAGE_PREFIX: ${{ vars.FOUREVER_IMAGE_PREFIX }}
-      FOUREVER_LIFECYCLE_PREFIX: ${{ vars.FOUREVER_LIFECYCLE_PREFIX }}
+      FOUREVER_BUCKET: ${{ secrets.FOUREVER_BUCKET }}
+      FOUREVER_IMAGE_PREFIX: thrinwulf/dawn-of-the-delta/reveal
+      FOUREVER_LIFECYCLE_PREFIX: thrinwulf/dawn-of-the-delta/lifecycle
+      DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      AMOY_RPC: ${{ secrets.AMOY_RPC_URL }}
+      RARITY_SEED: ${{ secrets.RARITY_SEED }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
-      - name: Human and configuration gate
+      - name: Configuration gate
         run: |
-          test '${{ inputs.confirmation }}' = 'IMPORT-THRINWULF-1654'
           : "${FOUREVER_BUCKET:?missing FOUREVER_BUCKET}"
           : "${FOUREVER_IMAGE_PREFIX:?missing FOUREVER_IMAGE_PREFIX}"
           : "${FOUREVER_LIFECYCLE_PREFIX:?missing FOUREVER_LIFECYCLE_PREFIX}"
+          : "${DEPLOYER_KEY:?missing DEPLOYER_PRIVATE_KEY}"
+          : "${AMOY_RPC:?missing AMOY_RPC_URL}"
+          : "${RARITY_SEED:?missing RARITY_SEED}"
+          [[ "${RARITY_SEED}" =~ ^0x[0-9a-fA-F]{64}$ ]]
       - name: Build deterministic Drive download plan
         run: |
           python3 - <<'PY'
@@ -47,7 +47,7 @@ jobs:
           download_one() {
             IFS=$'\t' read -r asset drive_id expected rarity ext <<< "$1"
             target="nft-upload/${asset}.${ext}"
-            curl --fail --location --retry 5 --retry-all-errors --silent --show-error +              "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "${target}"
+            curl --fail --location --retry 5 --retry-all-errors --silent --show-error "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "${target}"
             actual="$(stat -c%s "${target}")"
             test "${actual}" = "${expected}"
           }
@@ -65,7 +65,7 @@ jobs:
             print(x["driveFileId"],x["sizeBytes"],name,sep="\t")
           PY
           while IFS=$'\t' read -r drive_id expected name; do
-            curl --fail --location --retry 5 --retry-all-errors --silent --show-error +              "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "lifecycle-upload/${name}"
+            curl --fail --location --retry 5 --retry-all-errors --silent --show-error "https://drive.usercontent.google.com/download?id=${drive_id}&export=download&confirm=t" -o "lifecycle-upload/${name}"
             test "$(stat -c%s "lifecycle-upload/${name}")" = "${expected}"
           done < lifecycle-plan.tsv
           test "$(find lifecycle-upload -type f | wc -l | tr -d ' ')" -eq 2
@@ -73,11 +73,47 @@ jobs:
         run: aws --endpoint-url https://endpoint.4everland.co s3 sync nft-upload/ "s3://${FOUREVER_BUCKET}/${FOUREVER_IMAGE_PREFIX}/" --only-show-errors --no-follow-symlinks
       - name: Upload shared lifecycle media
         run: aws --endpoint-url https://endpoint.4everland.co s3 sync lifecycle-upload/ "s3://${FOUREVER_BUCKET}/${FOUREVER_LIFECYCLE_PREFIX}/" --only-show-errors --no-follow-symlinks
+      - name: Create and publish shared metadata
+        run: |
+          mystery_image="$(aws --endpoint-url https://endpoint.4everland.co s3api head-object --bucket "${FOUREVER_BUCKET}" --key "${FOUREVER_LIFECYCLE_PREFIX}/mystery.png" --query 'Metadata."ipfs-hash"' --output text)"
+          prereveal_image="$(aws --endpoint-url https://endpoint.4everland.co s3api head-object --bucket "${FOUREVER_BUCKET}" --key "${FOUREVER_LIFECYCLE_PREFIX}/pre-reveal.png" --query 'Metadata."ipfs-hash"' --output text)"
+          mkdir -p lifecycle-metadata
+          jq -n --arg image "ipfs://${mystery_image}" '{name:"THRINWULF — Mystery",description:"The shared mystery state for Dawn of the Delta.",image:$image}' > lifecycle-metadata/mystery.json
+          jq -n --arg image "ipfs://${prereveal_image}" '{name:"THRINWULF — Pre-Reveal",description:"The shared pre-reveal state for Dawn of the Delta.",image:$image}' > lifecycle-metadata/pre-reveal.json
+          jq -n '{name:"THRINWULF — Dawn of the Delta",description:"Collection 01, Book I of the THRINWULF Saga.",external_link:"https://thrinwulf.com/collection"}' > lifecycle-metadata/contract.json
+          aws --endpoint-url https://endpoint.4everland.co s3 sync lifecycle-metadata/ "s3://${FOUREVER_BUCKET}/${FOUREVER_LIFECYCLE_PREFIX}/metadata/" --content-type application/json --only-show-errors
+          for name in mystery pre-reveal contract; do
+            cid="$(aws --endpoint-url https://endpoint.4everland.co s3api head-object --bucket "${FOUREVER_BUCKET}" --key "${FOUREVER_LIFECYCLE_PREFIX}/metadata/${name}.json" --query 'Metadata."ipfs-hash"' --output text)"
+            test -n "${cid}"; test "${cid}" != None
+            case "${name}" in
+              mystery) variable=MYSTERY_METADATA_URI ;;
+              pre-reveal) variable=PRE_REVEAL_METADATA_URI ;;
+              contract) variable=CONTRACT_METADATA_URI ;;
+            esac
+            echo "${variable}=ipfs://${cid}" >> "${GITHUB_ENV}"
+          done
       - name: Verify all reveal CIDs
         run: bash tools/verify_4everland_bucket.sh 4everland-ipfs-report.tsv | tee 4everland-summary.json
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22', cache: npm, cache-dependency-path: contracts/package-lock.json}
+      - name: Compile, test and deploy complete Amoy contract stack
+        working-directory: contracts
+        run: |
+          npm ci --no-audit --no-fund
+          npm run compile
+          npm test
+          export FINAL_OWNER_ADDRESS="$(node -e 'const {Wallet}=require("ethers");console.log(new Wallet(process.env.DEPLOYER_KEY).address)')"
+          export READER_BONUS_SIGNER="${FINAL_OWNER_ADDRESS}"
+          export RARITY_COMMITMENT="$(node -e 'const {ethers}=require("ethers");console.log(ethers.keccak256(ethers.AbiCoder.defaultAbiCoder().encode(["bytes32"],[process.env.RARITY_SEED])))')"
+          export MYSTERY_METADATA_URI
+          export PRE_REVEAL_METADATA_URI
+          export CONTRACT_METADATA_URI
+          npm run deploy:amoy | tee deploy-output.json
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: thrinwulf-drive-4everland-${{ github.sha }}
-          path: 4everland-*
+          path: |
+            4everland-*
+            contracts/deploy-output.json
           if-no-files-found: error
           retention-days: 90
