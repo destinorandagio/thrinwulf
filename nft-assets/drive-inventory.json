@@ -1,0 +1,39 @@
+{
+  "format": "THRINWULF_DRIVE_INVENTORY_V1",
+  "sourceFolderId": "1_h9Tfis4iILec7SLNFx5RPHCJxFkvXkt",
+  "generatedAt": "2026-08-15T00:00:00Z",
+  "totalFiles": 1654,
+  "uniqueRevealAssets": 1652,
+  "totalBytes": 1420785234,
+  "architecture": {
+    "Common": 826,
+    "Uncommon": 413,
+    "Rare": 248,
+    "Epic": 99,
+    "Legendary": 49,
+    "Mythic": 16,
+    "Unicorn": 1
+  },
+  "unicorn": {
+    "driveFileId": "1rpz7PB7dj285ZoJV_mKU4RiTEXXS2bnD",
+    "filename": "Silver_wolf_meeting_three-headed…_202608101047.jpeg",
+    "selectionStatus": "designated-canonical",
+    "note": "Canonical one-of-one selected from the two silver-wolf/three-headed-guardian variants; visual approval remains a release-gate evidence item."
+  },
+  "sharedAssets": [
+    {
+      "role": "Pre-Reveal",
+      "driveFileId": "1Ga2FBgA_o2AWkmQpQMt-B8KAJyl7hlTg",
+      "filename": "Pre-Reveal Thrinwulf Dawn of the Delta Collection.png",
+      "sizeBytes": 2703187
+    },
+    {
+      "role": "Mystery",
+      "driveFileId": "1ZMQkxnS6ZG3KgCgiYK8IS2AznI276j92",
+      "filename": "Mistery Thrinwulf Dawn of the Delta Collection.png",
+      "sizeBytes": 2844129
+    }
+  ],
+  "assignmentRule": "Unicorn fixed by drive_file_id; all remaining assets sorted by stable Google Drive file ID and allocated to exact rarity pools. Token IDs are assigned only after contract address and rarity seed are finalized.",
+  "imageUriStatus": "pending-4everland-ipfs"
+}
