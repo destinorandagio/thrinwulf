@@ -1,0 +1,52 @@
+name: FTPS Site Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      target: {description: Hosting target, required: true, type: choice, options: [staging, production]}
+      confirmation: {description: 'For production type DEPLOY-THRINWULF-SITE', required: false, type: string}
+permissions: {contents: read}
+concurrency: {group: 'site-${{ inputs.target }}', cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ inputs.target == 'production' && 'site-production' || 'site-staging' }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: shivammathur/setup-php@f3e473d116dcccaddc5834248c87452386958240
+        with: {php-version: '8.2', tools: composer:v2}
+      - name: Production human gate
+        if: inputs.target == 'production'
+        run: test '${{ inputs.confirmation }}' = 'DEPLOY-THRINWULF-SITE'
+      - name: Validate application
+        run: |
+          find app config public tools -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tools/check_copy_policy.php
+          php tools/seo_audit.php
+          composer install --no-dev --prefer-dist --no-interaction --no-progress --optimize-autoloader
+      - name: Install FTPS client
+        run: sudo apt-get update && sudo apt-get install -y lftp
+      - name: Upload application over verified FTPS
+        env:
+          FTP_HOST: ${{ secrets.FTP_HOST }}
+          FTP_USER: ${{ secrets.FTP_USERNAME }}
+          FTP_PASS: ${{ secrets.FTP_PASSWORD }}
+          FTP_PORT: ${{ vars.FTP_PORT }}
+          FTP_APP_ROOT: ${{ vars.FTP_APP_ROOT }}
+        run: |
+          : "${FTP_HOST:?missing FTP_HOST}"; : "${FTP_USER:?missing FTP_USERNAME}"; : "${FTP_PASS:?missing FTP_PASSWORD}"; : "${FTP_APP_ROOT:?missing FTP_APP_ROOT}"
+          case "$FTP_APP_ROOT" in /|''|.|..) echo 'Unsafe FTP_APP_ROOT'; exit 1;; esac
+          lftp -u "$FTP_USER","$FTP_PASS" -p "${FTP_PORT:-21}" "ftps://$FTP_HOST" <<EOF
+          set ftp:ssl-force true
+          set ftp:ssl-protect-data true
+          set ssl:verify-certificate yes
+          mirror -R --delete --verbose --only-newer --exclude-glob .git/ --exclude-glob .github/ --exclude-glob .env --exclude-glob contracts/ --exclude-glob docs/ --exclude-glob database/ --exclude-glob storage/private/ --exclude-glob storage/database/ ./ "$FTP_APP_ROOT"
+          bye
+          EOF
+      - name: HTTPS smoke check
+        env: {SITE_URL: '${{ vars.SITE_URL }}'}
+        run: |
+          : "${SITE_URL:?missing SITE_URL}"
+          case "$SITE_URL" in https://*) ;; *) exit 1;; esac
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$SITE_URL/" >/dev/null
+          curl --fail --silent --show-error --retry 5 --retry-delay 5 "$SITE_URL/offer" >/dev/null
