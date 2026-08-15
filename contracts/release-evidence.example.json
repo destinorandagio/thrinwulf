@@ -1,0 +1,29 @@
+{
+  "network": "amoy",
+  "source_commit": "40_HEX_CHARACTERS",
+  "collection": {
+    "architecture": "THRINWULF_1652_V1",
+    "max_supply": 1652,
+    "paid_cap": 1487,
+    "reader_bonus_cap": 165,
+    "final_unique_images": 1652,
+    "shared_mystery_assets": 1,
+    "shared_pre_reveal_assets": 1,
+    "rarity_counts": {"Common":826,"Uncommon":413,"Rare":248,"Epic":99,"Legendary":49,"Mythic":16,"Unicorn":1}
+  },
+  "controls": {
+    "C01_compile": true,
+    "C02_tests": true,
+    "C03_fixed_parameters": true,
+    "C04_metadata_commitment": true,
+    "C05_validator_policy": true,
+    "C06_amoy_deployment": false,
+    "C07_amoy_dapp_e2e": false,
+    "C08_metadata_bundle_hash": false,
+    "C09_rarity_manifest": false,
+    "C10_owner_handoff": false,
+    "C11_marketplace_compatibility": false,
+    "C12_independent_reviews": false
+  },
+  "evidence_urls": {}
+}
