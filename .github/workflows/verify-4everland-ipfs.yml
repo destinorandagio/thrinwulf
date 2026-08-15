@@ -1,0 +1,26 @@
+name: Verify 4EVERLAND IPFS Collection
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation: {description: 'Type VERIFY-THRINWULF-1652', required: true, type: string}
+permissions: {contents: read}
+concurrency: {group: 'thrinwulf-4everland-verification', cancel-in-progress: false}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: web3-storage
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.FOUREVER_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.FOUREVER_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: 4everland
+      FOUREVER_BUCKET: ${{ vars.FOUREVER_BUCKET }}
+      FOUREVER_IMAGE_PREFIX: ${{ vars.FOUREVER_IMAGE_PREFIX }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - name: Human gate
+        run: test '${{ inputs.confirmation }}' = 'VERIFY-THRINWULF-1652'
+      - name: Verify exact image count, bytes and IPFS CIDs
+        run: bash tools/verify_4everland_bucket.sh 4everland-ipfs-report.tsv | tee 4everland-summary.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: 'thrinwulf-4everland-${{ github.sha }}', path: '4everland-*', if-no-files-found: error, retention-days: 90}
