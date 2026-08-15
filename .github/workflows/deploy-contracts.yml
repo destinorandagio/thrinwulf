@@ -1,0 +1,43 @@
+name: Polygon Contract Deploy
+on:
+  workflow_dispatch:
+    inputs:
+      network: {description: Target network, required: true, type: choice, options: [amoy, polygon]}
+      evidence_file: {description: Approved 12-control evidence JSON, required: true, default: contracts/release-evidence.json}
+      confirmation: {description: 'For mainnet type DEPLOY-THRINWULF-POLYGON', required: false, type: string}
+permissions: {contents: read}
+concurrency: {group: 'polygon-deploy-${{ inputs.network }}', cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    environment: ${{ inputs.network == 'polygon' && 'polygon-mainnet' || 'polygon-amoy' }}
+    defaults: {run: {working-directory: contracts}}
+    env:
+      DEPLOYER_KEY: ${{ secrets.DEPLOYER_PRIVATE_KEY }}
+      FINAL_OWNER_ADDRESS: ${{ vars.FINAL_OWNER_ADDRESS }}
+      READER_BONUS_SIGNER: ${{ vars.READER_BONUS_SIGNER }}
+      RARITY_COMMITMENT: ${{ vars.RARITY_COMMITMENT }}
+      MYSTERY_METADATA_URI: ${{ vars.MYSTERY_METADATA_URI }}
+      PRE_REVEAL_METADATA_URI: ${{ vars.PRE_REVEAL_METADATA_URI }}
+      CONTRACT_METADATA_URI: ${{ vars.CONTRACT_METADATA_URI }}
+      POLYGON_RPC: ${{ secrets.POLYGON_RPC_URL }}
+      AMOY_RPC: ${{ secrets.AMOY_RPC_URL }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with: {node-version: '22', cache: npm, cache-dependency-path: contracts/package-lock.json}
+      - name: Mainnet human gate
+        if: inputs.network == 'polygon'
+        working-directory: .
+        run: test '${{ inputs.confirmation }}' = 'DEPLOY-THRINWULF-POLYGON'
+      - run: npm ci --no-audit --no-fund
+      - run: npm run compile
+      - run: npm test
+      - name: Twelve-control release gate
+        run: node scripts/release-preflight.js ../${{ inputs.evidence_file }} '${{ inputs.network }}'
+      - name: Deploy with fail-closed configuration
+        run: |
+          if [ '${{ inputs.network }}' = polygon ]; then npm run deploy:polygon | tee deploy-output.json; else npm run deploy:amoy | tee deploy-output.json; fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with: {name: 'thrinwulf-${{ inputs.network }}-${{ github.sha }}', path: contracts/deploy-output.json, if-no-files-found: error, retention-days: 90}
