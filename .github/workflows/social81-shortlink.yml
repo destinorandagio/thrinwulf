@@ -1,0 +1,82 @@
+name: SOCIAL81+ Short Link
+
+on:
+  workflow_dispatch:
+    inputs:
+      source:
+        description: Social source (facebook, instagram, linkedin, etc.)
+        required: false
+        default: social81
+      medium:
+        description: UTM medium
+        required: false
+        default: social
+      campaign:
+        description: Campaign name
+        required: false
+        default: free_courses
+      content:
+        description: Creative/post identifier; blank = timestamp
+        required: false
+        default: ''
+  schedule:
+    # 05:00 UTC = 07:00 Europe/Rome during CEST. Scheduled workflows use UTC.
+    - cron: '0 5 * * *'
+    # 11:00 UTC = 13:00 Europe/Rome during CEST.
+    - cron: '0 11 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: social81-shortlink-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  create-link:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build campaign metadata
+        id: meta
+        shell: bash
+        run: |
+          SLOT="manual"
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            if [ "${{ github.event.schedule }}" = "0 5 * * *" ]; then SLOT="0700"; else SLOT="1300"; fi
+          fi
+          CONTENT="${{ inputs.content }}"
+          [ -n "$CONTENT" ] || CONTENT="$(date -u +%Y%m%d)_${SLOT}_$(date -u +%H%M%S)"
+          echo "content=$CONTENT" >> "$GITHUB_OUTPUT"
+
+      - name: Create tracked short link
+        env:
+          SOCIAL81_SOURCE: ${{ inputs.source || 'social81' }}
+          SOCIAL81_MEDIUM: ${{ inputs.medium || 'social' }}
+          SOCIAL81_CAMPAIGN: ${{ inputs.campaign || 'free_courses' }}
+          SOCIAL81_CONTENT: ${{ steps.meta.outputs.content }}
+        run: python social81/shortlink.py
+
+      - name: Publish latest link as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: social81-shortlink-${{ steps.meta.outputs.content }}
+          path: social81/output/latest-link.json
+          retention-days: 90
+
+      - name: Add link to workflow summary
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json
+          d=json.load(open('social81/output/latest-link.json'))
+          print('## SOCIAL81+ tracked link')
+          print(f"**Short:** {d['short_url']}")
+          print(f"\n**Analytics:** {d['analytics_url']}")
+          print(f"\n**Tracked destination:** {d['tracked_url']}")
+          PY
