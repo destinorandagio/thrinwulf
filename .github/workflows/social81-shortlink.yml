@@ -20,13 +20,11 @@ on:
         required: false
         default: ''
   schedule:
-    # 05:00 UTC = 07:00 Europe/Rome during CEST. Scheduled workflows use UTC.
     - cron: '0 5 * * *'
-    # 11:00 UTC = 13:00 Europe/Rome during CEST.
     - cron: '0 11 * * *'
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: social81-shortlink-${{ github.ref }}
@@ -37,7 +35,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -62,7 +59,7 @@ jobs:
           SOCIAL81_CONTENT: ${{ steps.meta.outputs.content }}
         run: python social81/shortlink.py
 
-      - name: Publish latest link as artifact
+      - name: Publish link artifact
         uses: actions/upload-artifact@v4
         with:
           name: social81-shortlink-${{ steps.meta.outputs.content }}
@@ -76,7 +73,12 @@ jobs:
           import json
           d=json.load(open('social81/output/latest-link.json'))
           print('## SOCIAL81+ tracked link')
-          print(f"**Short:** {d['short_url']}")
-          print(f"\n**Analytics:** {d['analytics_url']}")
+          print(f"**Link:** {d['short_url']}")
+          print(f"\n**Provider:** {d['provider']}")
+          print(f"\n**Shortened:** {d['shortened']}")
+          if d.get('analytics_url'):
+              print(f"\n**Analytics:** {d['analytics_url']}")
           print(f"\n**Tracked destination:** {d['tracked_url']}")
+          if d.get('provider_errors'):
+              print(f"\nFallback attempts: {len(d['provider_errors'])}")
           PY
